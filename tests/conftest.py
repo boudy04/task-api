@@ -2,15 +2,15 @@ import os
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from app.config import Settings
+from app.models import Base
 
 os.environ["DATABASE_URL"] = "postgresql+psycopg://postgres:postgres@localhost:5432/taskapi_test"
 
 engine = create_engine(Settings().database_url)
 SessionLocal = sessionmaker(bind=engine)
-Base = declarative_base()
 
 
 @pytest.fixture(scope="session")

@@ -94,9 +94,12 @@ p3/
   valid token on a protected route; `/health` open.
 - `tests/test_tasks.py`: CRUD happy paths, 404s, 422s, status filter, PATCH
   partial update, ordering (newest first).
-- Tests run against real Postgres (service container in CI; local via
-  docker-compose or a running Postgres). Schema created per test session, data
+- Tests run against real Postgres. Local: embedded Postgres via
+  `testing.postgresql` (no Docker needed on the dev machine). CI: GitHub
+  Actions Postgres service container. Schema created per test session, data
   truncated between tests.
+- `docker-compose.yml` (api + postgres) ships for anyone with Docker; the
+  Dockerfile is verified via CI build and the Railway deploy.
 
 ## Definition of done
 

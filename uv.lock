@@ -605,12 +605,17 @@ wheels = [
 [[package]]
 name = "task-api"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+prod = [
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -627,7 +632,9 @@ requires-dist = [
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extras = ["standard"] },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'prod'" },
 ]
+provides-extras = ["prod"]
 
 [package.metadata.requires-dev]
 dev = [

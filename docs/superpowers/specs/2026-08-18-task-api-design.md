@@ -94,15 +94,15 @@ p3/
   valid token on a protected route; `/health` open.
 - `tests/test_tasks.py`: CRUD happy paths, 404s, 422s, status filter, PATCH
   partial update, ordering (newest first).
-- Tests run against real Postgres. Local: embedded Postgres via
-  `testing.postgresql` (no Docker needed on the dev machine). CI: GitHub
-  Actions Postgres service container. Schema created per test session, data
-  truncated between tests.
-- `docker-compose.yml` (api + postgres) ships for anyone with Docker; the
-  Dockerfile is verified via CI build and the Railway deploy.
+- Tests run against real Postgres via docker-compose locally (Docker Desktop +
+  WSL2 installed as a prerequisite) and a Postgres service container in CI.
+  Schema created per test session, data truncated between tests.
+- The Dockerfile is verified locally (`docker build`) and via the CI build and
+  Railway deploy.
 
 ## Definition of done
 
+- [ ] Docker Desktop + WSL2 installed locally; `docker compose up` works
 - [ ] Public GitHub repo `task-api`, pinned
 - [ ] README: what, stack, run locally (compose), curl examples, test commands
 - [ ] ≥5 unit tests passing

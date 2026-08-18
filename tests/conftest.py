@@ -1,16 +1,19 @@
 import os
+import warnings
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
-
-from app.config import Settings
-from app.models import Base
+from sqlalchemy import text
 
 os.environ["DATABASE_URL"] = "postgresql+psycopg://postgres:postgres@localhost:5432/taskapi_test"
 
-engine = create_engine(Settings().database_url)
-SessionLocal = sessionmaker(bind=engine)
+from app.db import Base, SessionLocal, engine
+
+
+def pytest_configure(config):
+    warnings.filterwarnings(
+        "ignore",
+        message=r"Using `httpx` with `starlette.testclient` is deprecated",
+    )
 
 
 @pytest.fixture(scope="session")

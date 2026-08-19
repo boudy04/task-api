@@ -1,18 +1,17 @@
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import Settings
 
+_bearer = HTTPBearer(auto_error=False)
 
-def get_current_token(authorization: str | None = Header(default=None)) -> str:
-    if authorization is None or not authorization.startswith("Bearer "):
+
+def get_current_token(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str:
+    if credentials is None or credentials.credentials != Settings().auth_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing token",
         )
-    token = authorization.removeprefix("Bearer ").strip()
-    if token != Settings().auth_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing token",
-        )
-    return token
+    return credentials.credentials

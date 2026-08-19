@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -60,15 +60,6 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
     return _get_or_404(db, task_id)
 
 
-@router.put("/{task_id}", response_model=TaskRead)
-def replace_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
-    task = _get_or_404(db, task_id)
-    _apply_update(task, payload)
-    db.commit()
-    db.refresh(task)
-    return task
-
-
 @router.patch("/{task_id}", response_model=TaskRead)
 def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
     task = _get_or_404(db, task_id)
@@ -83,4 +74,3 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
     task = _get_or_404(db, task_id)
     db.delete(task)
     db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)

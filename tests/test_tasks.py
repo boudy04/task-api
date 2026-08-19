@@ -85,32 +85,6 @@ def test_get_unknown_task_404(client, clean_tables):
     assert resp.json() == {"detail": "Task not found"}
 
 
-def test_put_replaces_fields(client, clean_tables):
-    task = _create(client, "old")
-    resp = client.put(
-        f"/api/tasks/{task['id']}",
-        json={
-            "title": "new",
-            "description": "desc",
-            "status": "done",
-            "priority": "high",
-        },
-        headers=AUTH,
-    )
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["id"] == task["id"]
-    assert body["title"] == "new"
-    assert body["description"] == "desc"
-    assert body["status"] == "done"
-    assert body["priority"] == "high"
-
-
-def test_put_unknown_404(client, clean_tables):
-    resp = client.put("/api/tasks/999", json={"title": "x"}, headers=AUTH)
-    assert resp.status_code == 404
-    assert resp.json() == {"detail": "Task not found"}
-
 
 def test_patch_status_only(client, clean_tables):
     task = _create(client, "t", description="keep", priority="low")
@@ -157,6 +131,3 @@ def test_create_invalid_status_422(client, clean_tables):
     assert resp.status_code == 422
 
 
-def test_put_invalid_priority_422(client, clean_tables):
-    resp = client.put("/api/tasks/1", json={"priority": "critical"}, headers=AUTH)
-    assert resp.status_code == 422

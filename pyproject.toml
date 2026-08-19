@@ -15,11 +15,6 @@ dependencies = [
     "pydantic-settings",
 ]
 
-[project.optional-dependencies]
-prod = [
-    "uvicorn[standard]",
-]
-
 [dependency-groups]
 dev = [
     "pytest",

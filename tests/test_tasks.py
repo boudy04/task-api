@@ -111,6 +111,17 @@ def test_patch_null_status_422(client, clean_tables):
     assert resp.status_code == 422
 
 
+def test_patch_null_title_422(client, clean_tables):
+    task = _create(client, "t")
+    resp = client.patch(f"/api/tasks/{task['id']}", json={"title": None}, headers=AUTH)
+    assert resp.status_code == 422
+
+
+def test_out_of_range_task_id_422(client, clean_tables):
+    resp = client.get("/api/tasks/99999999999999999999", headers=AUTH)
+    assert resp.status_code == 422
+
+
 def test_delete_204_and_second_delete_404(client, clean_tables):
     task = _create(client, "t")
     resp = client.delete(f"/api/tasks/{task['id']}", headers=AUTH)
@@ -123,6 +134,27 @@ def test_delete_204_and_second_delete_404(client, clean_tables):
 
 def test_create_missing_title_422(client, clean_tables):
     resp = client.post("/api/tasks", json={}, headers=AUTH)
+    assert resp.status_code == 422
+
+
+def test_create_empty_title_422(client, clean_tables):
+    resp = client.post("/api/tasks", json={"title": ""}, headers=AUTH)
+    assert resp.status_code == 422
+
+
+def test_create_whitespace_title_422(client, clean_tables):
+    resp = client.post("/api/tasks", json={"title": "   "}, headers=AUTH)
+    assert resp.status_code == 422
+
+
+def test_create_oversized_title_422(client, clean_tables):
+    resp = client.post("/api/tasks", json={"title": "a" * 201}, headers=AUTH)
+    assert resp.status_code == 422
+
+
+def test_patch_empty_title_422(client, clean_tables):
+    task = _create(client, "t")
+    resp = client.patch(f"/api/tasks/{task['id']}", json={"title": ""}, headers=AUTH)
     assert resp.status_code == 422
 
 

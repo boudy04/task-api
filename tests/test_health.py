@@ -19,3 +19,16 @@ def test_app_boots_with_routes():
 def test_api_tasks_requires_auth():
     resp = client.get("/api/tasks")
     assert resp.status_code == 401
+
+
+def test_health_503_when_db_down(db_engine, monkeypatch):
+    import app.db as db_module
+
+    class _BrokenEngine:
+        def connect(self):
+            raise ConnectionError("db down")
+
+    monkeypatch.setattr(db_module, "engine", _BrokenEngine())
+    monkeypatch.setattr("app.main.engine", _BrokenEngine())
+    resp = client.get("/health")
+    assert resp.status_code == 503

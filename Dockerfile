@@ -5,7 +5,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY app/ ./app/
 
-RUN pip install --no-cache-dir .[prod]
+RUN pip install --no-cache-dir .
 
 ENV PORT=8000
 EXPOSE 8000

@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class TaskStatus(StrEnum):
@@ -16,18 +16,28 @@ class TaskPriority(StrEnum):
     high = "high"
 
 
+def _strip_title(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value.strip()
+
+
 class TaskCreate(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=200)
     description: str | None = None
     status: TaskStatus = TaskStatus.todo
     priority: TaskPriority = TaskPriority.medium
 
+    _strip_title = field_validator("title", mode="before")(_strip_title)
+
 
 class TaskUpdate(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
     status: TaskStatus | None = None
     priority: TaskPriority | None = None
+
+    _strip_title = field_validator("title", mode="before")(_strip_title)
 
 
 class TaskRead(BaseModel):

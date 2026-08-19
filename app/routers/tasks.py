@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,8 @@ router = APIRouter(
     dependencies=[Depends(get_current_token)],
 )
 
-_NON_NULLABLE = ("status", "priority")
+_NON_NULLABLE = ("title", "status", "priority")
+_INT4_MAX = 2_147_483_647
 
 
 def _get_or_404(db: Session, task_id: int) -> Task:
@@ -56,12 +57,16 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{task_id}", response_model=TaskRead)
-def get_task(task_id: int, db: Session = Depends(get_db)):
+def get_task(task_id: int = Path(ge=1, le=_INT4_MAX), db: Session = Depends(get_db)):
     return _get_or_404(db, task_id)
 
 
 @router.patch("/{task_id}", response_model=TaskRead)
-def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
+def update_task(
+    payload: TaskUpdate,
+    task_id: int = Path(ge=1, le=_INT4_MAX),
+    db: Session = Depends(get_db),
+):
     task = _get_or_404(db, task_id)
     _apply_update(task, payload)
     db.commit()
@@ -70,7 +75,7 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int, db: Session = Depends(get_db)):
+def delete_task(task_id: int = Path(ge=1, le=_INT4_MAX), db: Session = Depends(get_db)):
     task = _get_or_404(db, task_id)
     db.delete(task)
     db.commit()

@@ -125,5 +125,27 @@ curl -X DELETE http://localhost:8000/api/tasks/1 -H "Authorization: Bearer $TOKE
 # 204 No Content
 ```
 
+### Tags
+
+Tasks carry per-user string tags (categories in the app map onto these). The
+server normalizes them: trimmed, deduplicated case-insensitively, stored
+lowercase; responses return them alphabetized. Deleting a task (or removing its
+tags) removes tag rows that no longer have any references.
+
+```bash
+curl -X POST http://localhost:8000/api/tasks \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Ship v2","tags":[" Work ","work","urgent"]}'
+# 201 {..., "tags":["urgent","work"]}
+```
+
+Filter by one or more tags — multiple `?tag=` params are ANDed:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/tasks?tag=work"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/tasks?tag=work&tag=urgent"
+```
+
 Missing/wrong/expired token → `401`; invalid body → `422`; another user's task
 is indistinguishable from a nonexistent one (`404`).

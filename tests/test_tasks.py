@@ -23,7 +23,7 @@ def test_create_task_returns_201_with_defaults(client, auth):
     assert body["status"] == "todo"
     assert body["priority"] == "medium"
     assert body["due_at"] is None
-    assert body["created_at"] is not None
+    assert body["tags"] == []
     assert body["updated_at"] is not None
 
 
@@ -209,6 +209,69 @@ def test_due_at_null_default_and_clearing(client, auth):
         f"/api/tasks/{task['id']}", json={"due_at": None}, headers=auth
     )
     assert cleared.json()["due_at"] is None
+
+
+# --- v2: tags ---
+
+
+def test_tag_normalize_dedupe_lowercase(client, auth):
+    task = _create(client, auth, "tagged", tags=[" Work ", "WORK", "work", "home", ""])
+    assert task["tags"] == ["home", "work"]
+
+
+def test_patch_replaces_tags_and_cleans_orphans(client, auth, db_session):
+    from app.models import Tag
+
+    task = _create(client, auth, "t", tags=["solo"])
+    resp = client.patch(
+        f"/api/tasks/{task['id']}", json={"tags": ["other"]}, headers=auth
+    )
+    assert resp.status_code == 200
+    assert resp.json()["tags"] == ["other"]
+    # 'solo' lost its last reference -> row must be gone.
+    db_session.commit()
+    assert [t.name for t in db_session.query(Tag).all()] == ["other"]
+
+
+def test_delete_task_removes_its_orphan_tags(client, auth, db_session):
+    from app.models import Tag
+
+    task = _create(client, auth, "doomed", tags=["ghost"])
+    client.delete(f"/api/tasks/{task['id']}", headers=auth)
+    db_session.commit()
+    assert db_session.query(Tag).count() == 0
+
+
+def test_tag_filter(client, auth):
+    _create(client, auth, "a", tags=["work"])
+    _create(client, auth, "b", tags=["home"])
+    resp = client.get("/api/tasks", params=[("tag", "work")], headers=auth)
+    assert [t["title"] for t in resp.json()] == ["a"]
+    # Case-insensitive match against normalized names.
+    resp = client.get("/api/tasks", params=[("tag", "WORK")], headers=auth)
+    assert [t["title"] for t in resp.json()] == ["a"]
+
+
+def test_tag_filter_and_semantics(client, auth):
+    _create(client, auth, "both", tags=["work", "urgent"])
+    _create(client, auth, "only-work", tags=["work"])
+    resp = client.get(
+        "/api/tasks", params=[("tag", "work"), ("tag", "urgent")], headers=auth
+    )
+    assert [t["title"] for t in resp.json()] == ["both"]
+
+
+def test_tags_scoped_per_user(client, auth, auth_b, db_session):
+    from app.models import Tag
+
+    _create(client, auth, "alice task", tags=["sharedname"])
+    task_b = _create(client, auth_b, "bob task", tags=["sharedname"])
+    assert task_b["tags"] == ["sharedname"]
+    db_session.commit()
+    # Same name is fine across users: two independent rows, one per user.
+    rows = db_session.query(Tag).filter_by(name="sharedname").all()
+    assert len(rows) == 2
+    assert len({r.user_id for r in rows}) == 2
 
 
 def test_bootstrap_user_exists_and_owns_orphans(db_session, clean_tables):

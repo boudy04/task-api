@@ -28,6 +28,7 @@ class TaskCreate(BaseModel):
     status: TaskStatus = TaskStatus.todo
     priority: TaskPriority = TaskPriority.medium
     due_at: datetime | None = None
+    tags: list[str] = []
 
     _strip_title = field_validator("title", mode="before")(_strip_title)
 
@@ -38,6 +39,7 @@ class TaskUpdate(BaseModel):
     status: TaskStatus | None = None
     priority: TaskPriority | None = None
     due_at: datetime | None = None
+    tags: list[str] | None = None
 
     _strip_title = field_validator("title", mode="before")(_strip_title)
 
@@ -51,8 +53,16 @@ class TaskRead(BaseModel):
     status: TaskStatus
     priority: TaskPriority
     due_at: datetime | None = None
+    tags: list[str] = []
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _tag_names(cls, v):
+        # Accept ORM Tag objects (from_attributes) or plain strings; always
+        # return names alphabetized.
+        return sorted(getattr(t, "name", t) for t in (v or []))
 
     @field_serializer("due_at")
     def _due_at_utc(self, v: datetime | None) -> str | None:

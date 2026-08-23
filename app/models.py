@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Table, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -14,6 +14,38 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
+
+
+task_tags = Table(
+    "task_tags",
+    Base.metadata,
+    Column("task_id", ForeignKey("tasks.id"), primary_key=True),
+    Column("tag_id", ForeignKey("tags.id"), primary_key=True),
+)
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+
+    tasks: Mapped[list["Task"]] = relationship(
+        secondary=task_tags, back_populates="tags"
+    )
+
+
+# UNIQUE(user_id, lower(name)): tag names are unique per user,
+# case-insensitively. Declared after the class so the expression binds to the
+# real column (inside __table_args__, func.lower("name") renders a string
+# literal, not the column).
+Index(
+    "uq_tags_user_lower_name",
+    Tag.__table__.c.user_id,
+    func.lower(Tag.__table__.c.name),
+    unique=True,
+)
 
 
 
@@ -41,5 +73,9 @@ class Task(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+    tags: Mapped[list[Tag]] = relationship(
+        secondary=task_tags, back_populates="tasks", lazy="selectin"
     )
 

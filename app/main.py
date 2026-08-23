@@ -21,6 +21,12 @@ def init_db() -> None:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS user_id INTEGER"))
         conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ"))
+        # create_all only builds indexes for brand-new tables; enforce the
+        # per-user case-insensitive uniqueness on existing ones too.
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_tags_user_lower_name "
+            "ON tags (user_id, lower(name))"
+        ))
     bootstrap_password = Settings().bootstrap_password
     with SessionLocal() as db:
         user = db.scalar(select(User).where(User.username == BOOTSTRAP_USERNAME))

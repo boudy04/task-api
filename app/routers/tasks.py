@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_token
+from app.auth import User, get_current_user
 from app.db import get_db
 from app.models import Task
 from app.schemas import TaskCreate, TaskRead, TaskStatus, TaskUpdate
@@ -10,15 +10,15 @@ from app.schemas import TaskCreate, TaskRead, TaskStatus, TaskUpdate
 router = APIRouter(
     prefix="/api/tasks",
     tags=["tasks"],
-    dependencies=[Depends(get_current_token)],
+    dependencies=[Depends(get_current_user)],
 )
 
 _NON_NULLABLE = ("title", "status", "priority")
 _INT4_MAX = 2_147_483_647
 
 
-def _get_or_404(db: Session, task_id: int) -> Task:
-    task = db.get(Task, task_id)
+def _get_or_404(db: Session, user: User, task_id: int) -> Task:
+    task = db.scalar(select(Task).where(Task.id == task_id, Task.user_id == user.id))
     if task is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
@@ -39,17 +39,23 @@ def _apply_update(task: Task, payload: TaskUpdate) -> None:
 @router.get("", response_model=list[TaskRead])
 def list_tasks(
     task_status: TaskStatus | None = Query(default=None, alias="status"),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    stmt = select(Task).order_by(Task.created_at.desc(), Task.id.desc())
+    stmt = select(Task).where(Task.user_id == user.id)
+    stmt = stmt.order_by(Task.created_at.desc(), Task.id.desc())
     if task_status is not None:
         stmt = stmt.where(Task.status == task_status.value)
     return db.scalars(stmt).all()
 
 
 @router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
-def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
-    task = Task(**payload.model_dump())
+def create_task(
+    payload: TaskCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = Task(user_id=user.id, **payload.model_dump())
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -57,17 +63,23 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{task_id}", response_model=TaskRead)
-def get_task(task_id: int = Path(ge=1, le=_INT4_MAX), db: Session = Depends(get_db)):
-    return _get_or_404(db, task_id)
+def get_task(
+    task_id: int = Path(ge=1, le=_INT4_MAX),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return _get_or_404(db, user, task_id)
 
 
 @router.patch("/{task_id}", response_model=TaskRead)
+@router.put("/{task_id}", response_model=TaskRead)
 def update_task(
     payload: TaskUpdate,
     task_id: int = Path(ge=1, le=_INT4_MAX),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    task = _get_or_404(db, task_id)
+    task = _get_or_404(db, user, task_id)
     _apply_update(task, payload)
     db.commit()
     db.refresh(task)
@@ -75,7 +87,11 @@ def update_task(
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int = Path(ge=1, le=_INT4_MAX), db: Session = Depends(get_db)):
-    task = _get_or_404(db, task_id)
+def delete_task(
+    task_id: int = Path(ge=1, le=_INT4_MAX),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = _get_or_404(db, user, task_id)
     db.delete(task)
     db.commit()

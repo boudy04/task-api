@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 class TaskStatus(StrEnum):
@@ -27,6 +27,7 @@ class TaskCreate(BaseModel):
     description: str | None = None
     status: TaskStatus = TaskStatus.todo
     priority: TaskPriority = TaskPriority.medium
+    due_at: datetime | None = None
 
     _strip_title = field_validator("title", mode="before")(_strip_title)
 
@@ -36,6 +37,7 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     status: TaskStatus | None = None
     priority: TaskPriority | None = None
+    due_at: datetime | None = None
 
     _strip_title = field_validator("title", mode="before")(_strip_title)
 
@@ -48,5 +50,16 @@ class TaskRead(BaseModel):
     description: str | None
     status: TaskStatus
     priority: TaskPriority
+    due_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer("due_at")
+    def _due_at_utc(self, v: datetime | None) -> str | None:
+        # Contract: due_at is always ISO-8601 UTC (or null), regardless of the
+        # DB session timezone Postgres hands back.
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        return v.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")

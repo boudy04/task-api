@@ -1,17 +1,24 @@
 # Task API
 
-FastAPI + Postgres task-tracker REST API with bearer-token auth. All endpoints
-under `/api/tasks` require `Authorization: Bearer <AUTH_TOKEN>`; `/health` is
-public.
+FastAPI + Postgres task-tracker REST API with per-user JWT auth. `/api/auth/*`
+issues tokens; all endpoints under `/api/tasks` require
+`Authorization: Bearer <jwt>` and only ever see the calling user's tasks.
+`/health` is public.
 
 ## Configuration
 
 Both paths read the same env vars (defaults shown):
 
-| Variable      | Default                                                         |
-|---------------|-----------------------------------------------------------------|
-| `DATABASE_URL`| `postgresql+psycopg://postgres:postgres@localhost:5432/taskapi` |
-| `AUTH_TOKEN`  | `dev-token`                                                      |
+| Variable            | Default                                                         |
+|---------------------|-----------------------------------------------------------------|
+| `DATABASE_URL`      | `postgresql+psycopg://postgres:postgres@localhost:5432/taskapi` |
+| `JWT_SECRET`        | _(empty = random per boot, warning logged; set in production)_   |
+| `BOOTSTRAP_PASSWORD`| `change-me-now`                                                 |
+| `AUTH_TOKEN`        | _(retired v1 static token — ignored, logged once if set)_        |
+
+On startup the app creates missing tables/columns (`tasks.user_id`,
+`tasks.due_at`), ensures the bootstrap account `boudy04` exists (password from
+`BOOTSTRAP_PASSWORD`), and attaches any pre-existing orphan tasks to it.
 
 ## Path 1 — Native local Postgres (this machine)
 
@@ -42,11 +49,22 @@ API is at `http://localhost:8000`, Postgres at the internal host `postgres:5432`
 
 ## Using the API
 
-Set your token once (`dev-token` by default — override with `AUTH_TOKEN`):
+### Register / login (public)
 
 ```bash
-TOKEN=dev-token
+curl -X POST http://localhost:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"boudy04","password":"at-least-8-chars"}'
+# 201 {"token":"<jwt>"}   (409 if username taken, 422 on validation)
+
+curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"boudy04","password":"at-least-8-chars"}'
+# 200 {"token":"<jwt>"}   (401 on bad credentials)
 ```
+
+Usernames are >=3 chars, passwords >=8 chars. Tokens are JWT HS256 with 30-day
+expiry; send them as `Authorization: Bearer $TOKEN` on every task call.
 
 ### Health (public, no auth)
 
@@ -61,12 +79,12 @@ curl http://localhost:8000/health
 curl -X POST http://localhost:8000/api/tasks \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title":"Write README","description":"Document both dev paths","status":"todo","priority":"medium"}'
-# 201 {"id":1,"title":"Write README",...,"status":"todo","priority":"medium","created_at":"...","updated_at":"..."}
+  -d '{"title":"Write README","description":"Document both dev paths","status":"todo","priority":"medium","due_at":"2026-09-01T12:00:00Z"}'
+# 201 {"id":1,"title":"Write README",...,"due_at":"2026-09-01T12:00:00Z",...}
 ```
 
 `status` is one of `todo` | `in_progress` | `done`; `priority` one of
-`low` | `medium` | `high`.
+`low` | `medium` | `high`; `due_at` is ISO-8601 UTC or null.
 
 ### List tasks (newest first, optional `status` filter)
 
@@ -85,7 +103,8 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/tasks/1
 ### Update a task
 
 Full replace (PUT) and partial update (PATCH) both accept any subset of
-`title`, `description`, `status`, `priority`:
+`title`, `description`, `status`, `priority`, `due_at`
+(`due_at: null` clears it):
 
 ```bash
 curl -X PUT http://localhost:8000/api/tasks/1 \
@@ -106,4 +125,5 @@ curl -X DELETE http://localhost:8000/api/tasks/1 -H "Authorization: Bearer $TOKE
 # 204 No Content
 ```
 
-Missing or wrong token → `401 {"detail":"Invalid or missing token"}`; invalid body → `422`.
+Missing/wrong/expired token → `401`; invalid body → `422`; another user's task
+is indistinguishable from a nonexistent one (`404`).

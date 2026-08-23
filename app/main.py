@@ -1,11 +1,49 @@
-from fastapi import FastAPI, HTTPException, status
-from sqlalchemy import text
+from contextlib import asynccontextmanager
 
-from app.db import engine
+from fastapi import FastAPI, HTTPException, status
+from sqlalchemy import select, text, update
+
+from app.auth import pwd_context, router as auth_router
+from app.config import Settings
+from app.db import SessionLocal, engine
+from app.models import Base, Task, User
 from app.routers import tasks
 
 
-app = FastAPI(title="Task API", version="0.1.0")
+BOOTSTRAP_USERNAME = "boudy04"
+
+
+def init_db() -> None:
+    """Idempotent startup schema setup: create_all for fresh DBs, then ALTER
+    TABLE backfills for pre-existing v1 databases (create_all does not add
+    columns to existing tables), then bootstrap user + orphan-task attach."""
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS user_id INTEGER"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ"))
+    bootstrap_password = Settings().bootstrap_password
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.username == BOOTSTRAP_USERNAME))
+        if user is None:
+            user = User(
+                username=BOOTSTRAP_USERNAME,
+                password_hash=pwd_context.hash(bootstrap_password),
+            )
+            db.add(user)
+            db.flush()
+        # Orphan tasks (v1 rows) attach to the bootstrap user.
+        db.execute(update(Task).where(Task.user_id.is_(None)).values(user_id=user.id))
+        db.commit()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Task API", version="0.2.0", lifespan=lifespan)
+app.include_router(auth_router)
 app.include_router(tasks.router)
 
 

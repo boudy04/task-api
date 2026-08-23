@@ -31,6 +31,12 @@ else:
 if os.environ.get("AUTH_TOKEN"):
     logger.warning("AUTH_TOKEN is retired and ignored; use JWT auth (POST /api/auth/login)")
 
+if not _settings.bootstrap_password or _settings.bootstrap_password == "change-me-now":
+    logger.warning(
+        "BOOTSTRAP_PASSWORD is unset/default - bootstrap account is exposed; "
+        "set a real value before deploying"
+    )
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 _bearer = HTTPBearer(auto_error=False)

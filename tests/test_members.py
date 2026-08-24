@@ -1,5 +1,8 @@
 """Demo workspace members: seeded trio + /api/members management."""
 
+from app.db import SessionLocal
+from app.models import Task
+
 
 def _names(client, auth):
     resp = client.get("/api/members", headers=auth)
@@ -62,3 +65,18 @@ def test_delete_owner_400(client, auth):
 
     assert resp.status_code == 400
     assert "boudy04" in _names(client, auth)
+
+
+def test_delete_member_with_task_409_row_survives(client, auth):
+    resp = client.post("/api/members", headers=auth, json={"username": "dave"})
+    member_id = resp.json()["id"]
+    # Legacy-style data owned by the member (FK would make a bare delete a 500).
+    with SessionLocal() as db:
+        db.add(Task(title="legacy", user_id=member_id))
+        db.commit()
+
+    resp = client.delete(f"/api/members/{member_id}", headers=auth)
+
+    assert resp.status_code == 409
+    assert resp.json() == {"detail": "Member still has tasks or tags"}
+    assert "dave" in _names(client, auth)

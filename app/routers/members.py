@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import BOOTSTRAP_USERNAME, get_current_user
 from app.db import get_db
-from app.models import User
+from app.models import Tag, Task, User
 from app.schemas import MemberCreate, MemberRead
 
 router = APIRouter(
@@ -53,6 +53,19 @@ def delete_member(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The workspace owner cannot be removed",
+        )
+    # Members are username-only today, but legacy rows can own data; deleting
+    # them would trip FKs (500). Block with a clear 409 instead.
+    owns_tasks = db.scalar(
+        select(func.count()).select_from(Task).where(Task.user_id == member.id)
+    )
+    owns_tags = db.scalar(
+        select(func.count()).select_from(Tag).where(Tag.user_id == member.id)
+    )
+    if owns_tasks or owns_tags:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Member still has tasks or tags",
         )
     db.delete(member)
     db.commit()

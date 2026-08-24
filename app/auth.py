@@ -7,6 +7,7 @@ reads/writes through that User row, so future accounts slot back in without
 touching the routers.
 """
 
+import logging
 import secrets
 
 from fastapi import Depends, HTTPException, status
@@ -20,10 +21,19 @@ from app.models import User
 
 _settings = Settings()
 
+logger = logging.getLogger(__name__)
+
 _bearer = HTTPBearer(auto_error=False)
 
 # The internal owner all API access is scoped to while accounts are deferred.
 BOOTSTRAP_USERNAME = "boudy04"
+
+# Mirrors the old bootstrap-password warning: loud default credentials.
+if _settings.auth_token == "dev-token":
+    logger.warning(
+        "AUTH_TOKEN is left at its default - the workspace is exposed; "
+        "set a real value before deploying"
+    )
 
 
 def get_current_user(
@@ -43,6 +53,7 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     user = db.scalar(select(User).where(User.username == BOOTSTRAP_USERNAME))
     if user is None:

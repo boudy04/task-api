@@ -1,12 +1,17 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 
 from app.auth import BOOTSTRAP_USERNAME
 from app.db import SessionLocal, engine
 from app.models import Base, Task, User
-from app.routers import tasks
+from app.routers import members, tasks
+
+
+# Demo workspace trio (decision R25): seeded once the DB holds only the
+# bootstrap owner, so fresh installs get a team to manage in the app.
+DEMO_MEMBERS = ("alice", "bob", "carol")
 
 
 def init_db() -> None:
@@ -35,6 +40,12 @@ def init_db() -> None:
             db.flush()
         # Orphan tasks (v1 rows) attach to the bootstrap user.
         db.execute(update(Task).where(Task.user_id.is_(None)).values(user_id=user.id))
+        # Demo members: only when the workspace is still owner-only.
+        user_count = db.scalar(select(func.count()).select_from(User))
+        if user_count == 1:
+            db.add_all(
+                User(username=name, password_hash="") for name in DEMO_MEMBERS
+            )
         db.commit()
 
 
@@ -46,6 +57,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="Task API", version="0.2.0", lifespan=lifespan)
 app.include_router(tasks.router)
+app.include_router(members.router)
 
 
 @app.get("/health")

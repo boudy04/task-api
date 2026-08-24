@@ -145,3 +145,37 @@ curl -H "Authorization: Bearer $TASK_TOKEN" "http://localhost:8000/api/tasks?tag
 
 Missing/wrong token → `401`; invalid body → `422`; another user's task
 is indistinguishable from a nonexistent one (`404`).
+
+## Demo workspace
+
+The server boots as a small demo team so the TaskVault app's Settings → Team
+card has something real to manage. The admin account is `boudy04`; fresh
+workspaces are also seeded with members `alice`, `bob` and `carol` - plain
+username rows with no passwords, exactly because there is no login yet.
+
+- **Solo use:** ignore members entirely. Nothing requires them; delete them in
+  the app or via the API and get on with your own tasks.
+- **Team use:** share the `AUTH_TOKEN` with teammates (it *is* the workspace
+  key) and give each other context by tagging tasks, e.g. `?tag=bob` for Bob's
+  queue.
+
+Members are managed under `/api/members`, same bearer token as tasks:
+
+```bash
+curl -H "Authorization: Bearer $TASK_TOKEN" http://localhost:8000/api/members
+# [{"id":1,"username":"alice"},...]
+
+curl -X POST http://localhost:8000/api/members \
+  -H "Authorization: Bearer $TASK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"Dave_Dev"}'
+# 201 {"id":5,"username":"dave_dev"}   (3-24 chars a-z 0-9 _ . -, lowercased)
+# 409 if taken (case-insensitive), 422 if invalid
+
+curl -X DELETE http://localhost:8000/api/members/5 -H "Authorization: Bearer $TASK_TOKEN"
+# 204 (404 unknown id, 400 for boudy04 - the owner cannot be removed)
+```
+
+Future note: external identity (Google login and friends) stays deferred along
+with accounts - see git tag `api-v2-auth-deferred`. When it lands, these
+member rows become the handles it attaches to.

@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from enum import StrEnum
 
@@ -73,3 +74,32 @@ class TaskRead(BaseModel):
         if v.tzinfo is None:
             v = v.replace(tzinfo=timezone.utc)
         return v.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+# Demo workspace members: username-only rows, no passwords (decision R25).
+_USERNAME_RE = re.compile(r"[a-z0-9_.-]{3,24}")
+
+
+class MemberCreate(BaseModel):
+    username: str
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _normalize(cls, v):
+        return v.strip().lower() if isinstance(v, str) else v
+
+    @field_validator("username")
+    @classmethod
+    def _charset(cls, v: str) -> str:
+        if not _USERNAME_RE.fullmatch(v):
+            raise ValueError(
+                "username must be 3-24 chars of a-z, 0-9, dot, dash or underscore"
+            )
+        return v
+
+
+class MemberRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str

@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from sqlalchemy import text
+
 
 def _create(client, auth, title="Task", **kwargs):
     resp = client.post("/api/tasks", json={"title": title, **kwargs}, headers=auth)
@@ -311,3 +313,100 @@ def test_bootstrap_user_exists_and_owns_orphans(db_session, clean_tables):
     init_db()
     row = db_session.get(Task, orphan_id)
     assert row.user_id == user_id
+
+
+# --- v2: assignees ---
+
+
+def _member_ids(client, auth, *usernames):
+    members = client.get("/api/members", headers=auth).json()
+    by_name = {m["username"]: m["id"] for m in members}
+    return [by_name[name] for name in usernames]
+
+
+def test_assign_on_create_round_trip(client, auth):
+    ids = _member_ids(client, auth, "alice", "bob")
+    task = _create(client, auth, "assigned", assignee_ids=ids)
+    assert task["assignees"] == [
+        {"id": ids[0], "username": "alice"},
+        {"id": ids[1], "username": "bob"},
+    ]
+    got = client.get(f"/api/tasks/{task['id']}", headers=auth).json()
+    assert got["assignees"] == task["assignees"]
+
+
+def test_patch_replaces_assignee_set(client, auth):
+    a, b = _member_ids(client, auth, "alice", "bob")
+    c = _member_ids(client, auth, "carol")[0]
+    task = _create(client, auth, "t", assignee_ids=[a, b])
+    resp = client.patch(
+        f"/api/tasks/{task['id']}", json={"assignee_ids": [c]}, headers=auth
+    )
+    assert resp.status_code == 200
+    assert resp.json()["assignees"] == [{"id": c, "username": "carol"}]
+
+
+def test_assignees_alphabetical_order(client, auth):
+    carol, alice, bob = _member_ids(client, auth, "carol", "alice", "bob")
+    task = _create(client, auth, "t", assignee_ids=[carol, alice, bob])
+    assert [a["username"] for a in task["assignees"]] == ["alice", "bob", "carol"]
+
+
+def test_unknown_assignee_id_422(client, auth):
+    resp = client.post(
+        "/api/tasks", json={"title": "t", "assignee_ids": [9999]}, headers=auth
+    )
+    assert resp.status_code == 422
+    task = _create(client, auth, "t")
+    resp = client.patch(
+        f"/api/tasks/{task['id']}", json={"assignee_ids": [9999]}, headers=auth
+    )
+    assert resp.status_code == 422
+
+
+def test_filter_by_assignee(client, auth):
+    alice, bob = _member_ids(client, auth, "alice", "bob")
+    _create(client, auth, "alices", assignee_ids=[alice])
+    _create(client, auth, "bobs", assignee_ids=[bob])
+    resp = client.get("/api/tasks", params={"assignee": alice}, headers=auth)
+    assert [t["title"] for t in resp.json()] == ["alices"]
+
+
+def test_unassigned_returns_empty_list(client, auth):
+    task = _create(client, auth, "plain")
+    assert task["assignees"] == []
+
+
+def test_clearing_assignees(client, auth):
+    (alice,) = _member_ids(client, auth, "alice")
+    task = _create(client, auth, "t", assignee_ids=[alice])
+    resp = client.patch(
+        f"/api/tasks/{task['id']}", json={"assignee_ids": []}, headers=auth
+    )
+    assert resp.status_code == 200
+    assert resp.json()["assignees"] == []
+
+
+def test_cross_user_isolation_unaffected(client, auth, db_session):
+    (alice,) = _member_ids(client, auth, "alice")
+    _create(client, auth, "admin assigned", assignee_ids=[alice])
+    # Foreign user's task, directly assigned to alice in the DB: the admin's
+    # ?assignee= filter must never surface it.
+    foreign_task_id = _seed_foreign_task(db_session)
+    db_session.execute(
+        text("INSERT INTO task_assignees (task_id, user_id) VALUES (:t, :u)"),
+        {"t": foreign_task_id, "u": alice},
+    )
+    db_session.commit()
+    titles = [
+        t["title"]
+        for t in client.get("/api/tasks", params={"assignee": alice}, headers=auth).json()
+    ]
+    assert titles == ["admin assigned"]
+    # Writes to foreign tasks still 404 even with assignee payloads.
+    resp = client.put(
+        f"/api/tasks/{foreign_task_id}",
+        json={"title": "x", "assignee_ids": [alice]},
+        headers=auth,
+    )
+    assert resp.status_code == 404

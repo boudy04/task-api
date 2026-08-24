@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import User, get_current_user
 from app.db import get_db
-from app.models import Tag, Task
+from app.models import Tag, Task, User
 from app.schemas import TaskCreate, TaskRead, TaskStatus, TaskUpdate
 
 router = APIRouter(
@@ -64,10 +64,24 @@ def _cleanup_orphan_tags(db: Session, user: User) -> None:
     db.execute(delete(Tag).where(Tag.user_id == user.id, ~Tag.tasks.any()))
 
 
+def _resolve_assignees(db: Session, ids: list[int]) -> list[User]:
+    """Validate assignee ids against workspace members; 422 on any unknown."""
+    unique = list(dict.fromkeys(ids))
+    found = {u.id: u for u in db.scalars(select(User).where(User.id.in_(unique)))}
+    missing = [i for i in unique if i not in found]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown assignee ids: {missing}",
+        )
+    return [found[i] for i in unique]
+
+
 @router.get("", response_model=list[TaskRead])
 def list_tasks(
     task_status: TaskStatus | None = Query(default=None, alias="status"),
     tag_filter: list[str] | None = Query(default=None, alias="tag"),
+    assignee_filter: int | None = Query(default=None, alias="assignee"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -78,6 +92,8 @@ def list_tasks(
     # Choice: multiple ?tag= params are ANDed (task must carry every listed tag).
     for name in tag_filter or []:
         stmt = stmt.where(Task.tags.any(func.lower(Tag.name) == name.strip().lower()))
+    if assignee_filter is not None:
+        stmt = stmt.where(Task.assignees.any(User.id == assignee_filter))
     return db.scalars(stmt).all()
 
 
@@ -87,9 +103,12 @@ def create_task(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    task = Task(user_id=user.id, **payload.model_dump(exclude={"tags"}))
+    data = payload.model_dump(exclude={"tags", "assignee_ids"})
+    task = Task(user_id=user.id, **data)
     db.add(task)
     _set_task_tags(db, user, task, _normalize_tags(payload.tags))
+    if payload.assignee_ids:
+        task.assignees = _resolve_assignees(db, payload.assignee_ids)
     db.commit()
     db.refresh(task)
     return task
@@ -115,9 +134,13 @@ def update_task(
     task = _get_or_404(db, user, task_id)
     data = payload.model_dump(exclude_unset=True)
     tags = data.pop("tags", None)
+    assignee_ids = data.pop("assignee_ids", None)
     _apply_update(task, data)
     if tags is not None:
         _set_task_tags(db, user, task, _normalize_tags(tags))
+    if assignee_ids is not None:
+        # Empty list clears; unknown ids 422 before anything is written.
+        task.assignees = _resolve_assignees(db, assignee_ids)
     db.commit()
     db.refresh(task)
     _cleanup_orphan_tags(db, user)

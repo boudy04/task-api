@@ -23,6 +23,15 @@ task_tags = Table(
     Column("tag_id", ForeignKey("tags.id"), primary_key=True),
 )
 
+# Many-to-many task assignments. Every workspace member (any users row) can be
+# assigned; the admin token holder is the only one who writes tasks.
+task_assignees = Table(
+    "task_assignees",
+    Base.metadata,
+    Column("task_id", ForeignKey("tasks.id"), primary_key=True),
+    Column("user_id", ForeignKey("users.id"), primary_key=True),
+)
+
 
 class Tag(Base):
     __tablename__ = "tags"
@@ -77,5 +86,8 @@ class Task(Base):
 
     tags: Mapped[list[Tag]] = relationship(
         secondary=task_tags, back_populates="tasks", lazy="selectin"
+    )
+    assignees: Mapped[list["User"]] = relationship(
+        secondary=task_assignees, lazy="selectin"
     )
 

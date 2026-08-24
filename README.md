@@ -176,6 +176,31 @@ curl -X DELETE http://localhost:8000/api/members/5 -H "Authorization: Bearer $TA
 # 204 (404 unknown id, 400 for boudy04 - the owner cannot be removed)
 ```
 
+### Assignees
+
+Tasks can be assigned to workspace members. Send `assignee_ids` on create or
+update (full replacement semantics, like tags; `[]` clears):
+
+```bash
+curl -X POST http://localhost:8000/api/tasks \
+  -H "Authorization: Bearer $TASK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Ship v2","assignee_ids":[2,3]}'
+# 201 {..., "assignees":[{"id":2,"username":"bob"},{"id":3,"username":"carol"}]}
+```
+
+Responses list assignees alphabetized by username. Filter by assignee with
+`?assignee=<member id>`. Any unknown member id is rejected with `422`.
+
+### Permission model
+
+While accounts are deferred, the workspace token holder **is** the
+administrator: only the admin creates/updates/deletes tasks and assigns them to
+members. Members receive and view all workspace tasks but have no credentials -
+there are no member-scoped writes. Server-side scoping still routes every read
+and write through the token's owning user row (`tasks.user_id`), so when real
+accounts return, per-user enforcement slots back in without route changes.
+
 Future note: external identity (Google login and friends) stays deferred along
 with accounts - see git tag `api-v2-auth-deferred`. When it lands, these
 member rows become the handles it attaches to.

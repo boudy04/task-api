@@ -1,9 +1,13 @@
 # Task API
 
-FastAPI + Postgres task-tracker REST API with per-user JWT auth. `/api/auth/*`
-issues tokens; all endpoints under `/api/tasks` require
-`Authorization: Bearer <jwt>` and only ever see the calling user's tasks.
-`/health` is public.
+FastAPI + Postgres task-tracker REST API with a single static admin bearer
+token. All endpoints under `/api/tasks` require
+`Authorization: Bearer <AUTH_TOKEN>` and only ever see that token's owner's
+tasks. `/health` is public.
+
+> Accounts (register/login) are **deferred**: the full JWT auth design is
+> preserved at git tag `api-v2-auth-deferred`. The `users` table and all
+> per-user scoping stay; only the credential layer was reduced to one token.
 
 ## Configuration
 
@@ -12,13 +16,12 @@ Both paths read the same env vars (defaults shown):
 | Variable            | Default                                                         |
 |---------------------|-----------------------------------------------------------------|
 | `DATABASE_URL`      | `postgresql+psycopg://postgres:postgres@localhost:5432/taskapi` |
-| `JWT_SECRET`        | _(empty = random per boot, warning logged; set in production)_   |
-| `BOOTSTRAP_PASSWORD`| `change-me-now`                                                 |
-| `AUTH_TOKEN`        | _(retired v1 static token — ignored, logged once if set)_        |
+| `AUTH_TOKEN`        | `dev-token`                                                     |
 
 On startup the app creates missing tables/columns (`tasks.user_id`,
-`tasks.due_at`), ensures the bootstrap account `boudy04` exists (password from
-`BOOTSTRAP_PASSWORD`), and attaches any pre-existing orphan tasks to it.
+`tasks.due_at`), ensures the bootstrap account `boudy04` exists (placeholder
+password hash - accounts deferred), and attaches any pre-existing orphan tasks
+to it.
 
 ## Path 1 — Native local Postgres (this machine)
 
@@ -49,22 +52,15 @@ API is at `http://localhost:8000`, Postgres at the internal host `postgres:5432`
 
 ## Using the API
 
-### Register / login (public)
+### Authentication
+
+One static token, set via `AUTH_TOKEN` (default `dev-token`). Send it on every
+task call:
 
 ```bash
-curl -X POST http://localhost:8000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"boudy04","password":"at-least-8-chars"}'
-# 201 {"token":"<jwt>"}   (409 if username taken, 422 on validation)
-
-curl -X POST http://localhost:8000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"boudy04","password":"at-least-8-chars"}'
-# 200 {"token":"<jwt>"}   (401 on bad credentials)
+export TASK_TOKEN="dev-token"   # match the server's AUTH_TOKEN
+# Authorization: Bearer $TASK_TOKEN
 ```
-
-Usernames are >=3 chars, passwords >=8 chars. Tokens are JWT HS256 with 30-day
-expiry; send them as `Authorization: Bearer $TOKEN` on every task call.
 
 ### Health (public, no auth)
 
@@ -77,7 +73,7 @@ curl http://localhost:8000/health
 
 ```bash
 curl -X POST http://localhost:8000/api/tasks \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $TASK_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"title":"Write README","description":"Document both dev paths","status":"todo","priority":"medium","due_at":"2026-09-01T12:00:00Z"}'
 # 201 {"id":1,"title":"Write README",...,"due_at":"2026-09-01T12:00:00Z",...}
@@ -89,14 +85,14 @@ curl -X POST http://localhost:8000/api/tasks \
 ### List tasks (newest first, optional `status` filter)
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/tasks
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/tasks?status=done"
+curl -H "Authorization: Bearer $TASK_TOKEN" http://localhost:8000/api/tasks
+curl -H "Authorization: Bearer $TASK_TOKEN" "http://localhost:8000/api/tasks?status=done"
 ```
 
 ### Get one task
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/tasks/1
+curl -H "Authorization: Bearer $TASK_TOKEN" http://localhost:8000/api/tasks/1
 # 404 {"detail":"Task not found"} for unknown ids
 ```
 
@@ -108,12 +104,12 @@ Full replace (PUT) and partial update (PATCH) both accept any subset of
 
 ```bash
 curl -X PUT http://localhost:8000/api/tasks/1 \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $TASK_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"title":"Write README","status":"done"}'
 
 curl -X PATCH http://localhost:8000/api/tasks/1 \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $TASK_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"status":"in_progress"}'
 ```
@@ -121,7 +117,7 @@ curl -X PATCH http://localhost:8000/api/tasks/1 \
 ### Delete a task
 
 ```bash
-curl -X DELETE http://localhost:8000/api/tasks/1 -H "Authorization: Bearer $TOKEN"
+curl -X DELETE http://localhost:8000/api/tasks/1 -H "Authorization: Bearer $TASK_TOKEN"
 # 204 No Content
 ```
 
@@ -134,7 +130,7 @@ tags) removes tag rows that no longer have any references.
 
 ```bash
 curl -X POST http://localhost:8000/api/tasks \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $TASK_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"title":"Ship v2","tags":[" Work ","work","urgent"]}'
 # 201 {..., "tags":["urgent","work"]}
@@ -143,9 +139,9 @@ curl -X POST http://localhost:8000/api/tasks \
 Filter by one or more tags — multiple `?tag=` params are ANDed:
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/tasks?tag=work"
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/tasks?tag=work&tag=urgent"
+curl -H "Authorization: Bearer $TASK_TOKEN" "http://localhost:8000/api/tasks?tag=work"
+curl -H "Authorization: Bearer $TASK_TOKEN" "http://localhost:8000/api/tasks?tag=work&tag=urgent"
 ```
 
-Missing/wrong/expired token → `401`; invalid body → `422`; another user's task
+Missing/wrong token → `401`; invalid body → `422`; another user's task
 is indistinguishable from a nonexistent one (`404`).

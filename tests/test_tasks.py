@@ -143,45 +143,58 @@ def test_create_invalid_status_422(client, auth):
 
 
 # --- v2: per-user scoping ---
+# There is only one token (the bootstrap user's), so the "other user" is a row
+# seeded straight into the DB. Routes must never return or touch its rows.
 
 
-def test_cross_user_get_isolated_404(client, auth, auth_b):
-    task = _create(client, auth, "alice only")
-    resp = client.get(f"/api/tasks/{task['id']}", headers=auth_b)
+def _seed_foreign_task(db_session, title="foreign task", username="seconduser"):
+    """Insert a second user + one of its tasks directly, bypassing all routes."""
+    from app.models import Task, User
+
+    user = User(username=username, password_hash="")
+    db_session.add(user)
+    db_session.commit()
+    task = Task(title=title, user_id=user.id)
+    db_session.add(task)
+    db_session.commit()
+    return task.id
+
+
+def test_cross_user_get_isolated_404(client, auth, db_session):
+    foreign_id = _seed_foreign_task(db_session)
+    resp = client.get(f"/api/tasks/{foreign_id}", headers=auth)
     assert resp.status_code == 404
 
 
-def test_cross_user_put_isolated_404(client, auth, auth_b):
-    task = _create(client, auth, "alice only")
+def test_cross_user_put_isolated_404(client, auth, db_session):
+    foreign_id = _seed_foreign_task(db_session)
     resp = client.put(
-        f"/api/tasks/{task['id']}",
-        json={"title": "bob was here"},
-        headers=auth_b,
+        f"/api/tasks/{foreign_id}",
+        json={"title": "admin was here"},
+        headers=auth,
     )
     assert resp.status_code == 404
 
 
-def test_cross_user_patch_isolated_404(client, auth, auth_b):
-    task = _create(client, auth, "alice only")
+def test_cross_user_patch_isolated_404(client, auth, db_session):
+    foreign_id = _seed_foreign_task(db_session)
     resp = client.patch(
-        f"/api/tasks/{task['id']}", json={"status": "done"}, headers=auth_b
+        f"/api/tasks/{foreign_id}", json={"status": "done"}, headers=auth
     )
     assert resp.status_code == 404
 
 
-def test_cross_user_delete_isolated_404(client, auth, auth_b):
-    task = _create(client, auth, "alice only")
-    resp = client.delete(f"/api/tasks/{task['id']}", headers=auth_b)
+def test_cross_user_delete_isolated_404(client, auth, db_session):
+    foreign_id = _seed_foreign_task(db_session)
+    resp = client.delete(f"/api/tasks/{foreign_id}", headers=auth)
     assert resp.status_code == 404
 
 
-def test_list_only_own_tasks(client, auth, auth_b):
-    _create(client, auth, "alice task")
-    _create(client, auth_b, "bob task")
-    alice_titles = [t["title"] for t in client.get("/api/tasks", headers=auth).json()]
-    bob_titles = [t["title"] for t in client.get("/api/tasks", headers=auth_b).json()]
-    assert alice_titles == ["alice task"]
-    assert bob_titles == ["bob task"]
+def test_list_only_own_tasks(client, auth, db_session):
+    _create(client, auth, "admin task")
+    _seed_foreign_task(db_session)
+    titles = [t["title"] for t in client.get("/api/tasks", headers=auth).json()]
+    assert titles == ["admin task"]
 
 
 # --- v2: due_at ---
@@ -261,17 +274,22 @@ def test_tag_filter_and_semantics(client, auth):
     assert [t["title"] for t in resp.json()] == ["both"]
 
 
-def test_tags_scoped_per_user(client, auth, auth_b, db_session):
-    from app.models import Tag
+def test_tags_scoped_per_user(client, auth, db_session):
+    from app.models import Tag, User
 
-    _create(client, auth, "alice task", tags=["sharedname"])
-    task_b = _create(client, auth_b, "bob task", tags=["sharedname"])
-    assert task_b["tags"] == ["sharedname"]
+    _create(client, auth, "admin task", tags=["sharedname"])
+    # Second user row gets its own identically-named tag directly in the DB.
+    _seed_foreign_task(db_session)
+    other = db_session.query(User).filter_by(username="seconduser").one()
+    db_session.add(Tag(user_id=other.id, name="sharedname"))
     db_session.commit()
     # Same name is fine across users: two independent rows, one per user.
     rows = db_session.query(Tag).filter_by(name="sharedname").all()
     assert len(rows) == 2
     assert len({r.user_id for r in rows}) == 2
+    # Tag filtering never leaks the foreign user's rows either.
+    resp = client.get("/api/tasks", params=[("tag", "sharedname")], headers=auth)
+    assert [t["title"] for t in resp.json()] == ["admin task"]
 
 
 def test_bootstrap_user_exists_and_owns_orphans(db_session, clean_tables):

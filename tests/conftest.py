@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 os.environ["DATABASE_URL"] = "postgresql+psycopg://postgres:postgres@localhost:5432/taskapi_test"
 
+from app.config import Settings
 from app.db import Base, SessionLocal, engine, get_db
 from app.main import app
 
@@ -51,24 +52,7 @@ def client(db_engine, clean_tables):
     app.dependency_overrides.clear()
 
 
-def register_and_login(client, username, password="password123"):
-    """Register (or log in) and return bearer-token headers for the user."""
-    resp = client.post(
-        "/api/auth/register", json={"username": username, "password": password}
-    )
-    if resp.status_code == 409:
-        resp = client.post(
-            "/api/auth/login", json={"username": username, "password": password}
-        )
-    assert resp.status_code in (200, 201), resp.text
-    return {"Authorization": f"Bearer {resp.json()['token']}"}
-
-
 @pytest.fixture(scope="function")
 def auth(client):
-    return register_and_login(client, "alice")
-
-
-@pytest.fixture(scope="function")
-def auth_b(client):
-    return register_and_login(client, "bob")
+    """Admin bearer-token headers - the only credentials that exist."""
+    return {"Authorization": f"Bearer {Settings().auth_token}"}

@@ -3,14 +3,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, status
 from sqlalchemy import select, text, update
 
-from app.auth import pwd_context, router as auth_router
-from app.config import Settings
+from app.auth import BOOTSTRAP_USERNAME
 from app.db import SessionLocal, engine
 from app.models import Base, Task, User
 from app.routers import tasks
-
-
-BOOTSTRAP_USERNAME = "boudy04"
 
 
 def init_db() -> None:
@@ -27,13 +23,13 @@ def init_db() -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_tags_user_lower_name "
             "ON tags (user_id, lower(name))"
         ))
-    bootstrap_password = Settings().bootstrap_password
     with SessionLocal() as db:
         user = db.scalar(select(User).where(User.username == BOOTSTRAP_USERNAME))
         if user is None:
             user = User(
                 username=BOOTSTRAP_USERNAME,
-                password_hash=pwd_context.hash(bootstrap_password),
+                # Placeholder hash - accounts deferred, see tag api-v2-auth-deferred.
+                password_hash="",
             )
             db.add(user)
             db.flush()
@@ -49,7 +45,6 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Task API", version="0.2.0", lifespan=lifespan)
-app.include_router(auth_router)
 app.include_router(tasks.router)
 
 

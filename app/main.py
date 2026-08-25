@@ -6,6 +6,7 @@ from sqlalchemy import func, select, text, update
 from app.auth import BOOTSTRAP_USERNAME
 from app.db import SessionLocal, engine
 from app.models import Base, Task, User
+from app.auth import router as identity_router
 from app.routers import members, tasks
 
 
@@ -20,8 +21,8 @@ def init_db() -> None:
     columns to existing tables), then bootstrap user + orphan-task attach."""
     Base.metadata.create_all(engine)
     with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS user_id INTEGER"))
         conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS token_hash VARCHAR"))
         # create_all only builds indexes for brand-new tables; enforce the
         # per-user case-insensitive uniqueness on existing ones too.
         conn.execute(text(
@@ -68,3 +69,7 @@ def health() -> dict:
     except Exception:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="db unavailable")
     return {"status": "ok"}
+
+
+
+app.include_router(identity_router)

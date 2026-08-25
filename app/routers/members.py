@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.auth import BOOTSTRAP_USERNAME, get_current_user
+from app.auth import BOOTSTRAP_USERNAME, Principal, get_current_user, require_admin
 from app.db import get_db
 from app.models import Tag, Task, User
 from app.schemas import MemberCreate, MemberRead
@@ -22,7 +22,12 @@ def list_members(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=MemberRead, status_code=status.HTTP_201_CREATED)
-def create_member(payload: MemberCreate, db: Session = Depends(get_db)):
+def create_member(
+    payload: MemberCreate,
+    principal: Principal = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(principal)
     # Rows are stored lowercase; the lower() compare also covers any legacy
     # mixed-case rows so duplicates are caught case-insensitively.
     exists = db.scalar(
@@ -42,8 +47,10 @@ def create_member(payload: MemberCreate, db: Session = Depends(get_db)):
 @router.delete("/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_member(
     member_id: int = Path(ge=1, le=_INT4_MAX),
+    principal: Principal = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    require_admin(principal)
     member = db.get(User, member_id)
     if member is None:
         raise HTTPException(
@@ -69,3 +76,5 @@ def delete_member(
         )
     db.delete(member)
     db.commit()
+
+

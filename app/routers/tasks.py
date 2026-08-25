@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.auth import User, get_current_user
+from app.auth import Principal, User, get_current_user, require_admin
 from app.db import get_db
 from app.models import Tag, Task, User
 from app.schemas import TaskCreate, TaskRead, TaskStatus, TaskUpdate
@@ -82,7 +82,7 @@ def list_tasks(
     task_status: TaskStatus | None = Query(default=None, alias="status"),
     tag_filter: list[str] | None = Query(default=None, alias="tag"),
     assignee_filter: int | None = Query(default=None, alias="assignee"),
-    user: User = Depends(get_current_user),
+    user: Principal = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     stmt = select(Task).where(Task.user_id == user.id)
@@ -100,9 +100,10 @@ def list_tasks(
 @router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
 def create_task(
     payload: TaskCreate,
-    user: User = Depends(get_current_user),
+    user: Principal = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    require_admin(user)
     data = payload.model_dump(exclude={"tags", "assignee_ids"})
     task = Task(user_id=user.id, **data)
     db.add(task)
@@ -117,7 +118,7 @@ def create_task(
 @router.get("/{task_id}", response_model=TaskRead)
 def get_task(
     task_id: int = Path(ge=1, le=_INT4_MAX),
-    user: User = Depends(get_current_user),
+    user: Principal = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return _get_or_404(db, user, task_id)
@@ -128,9 +129,10 @@ def get_task(
 def update_task(
     payload: TaskUpdate,
     task_id: int = Path(ge=1, le=_INT4_MAX),
-    user: User = Depends(get_current_user),
+    user: Principal = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    require_admin(user)
     task = _get_or_404(db, user, task_id)
     data = payload.model_dump(exclude_unset=True)
     tags = data.pop("tags", None)
@@ -151,11 +153,13 @@ def update_task(
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(
     task_id: int = Path(ge=1, le=_INT4_MAX),
-    user: User = Depends(get_current_user),
+    user: Principal = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    require_admin(user)
     task = _get_or_404(db, user, task_id)
     db.delete(task)
     db.commit()
     _cleanup_orphan_tags(db, user)
     db.commit()
+

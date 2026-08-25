@@ -14,6 +14,9 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Member session token (SHA-256 hex). NULL = no active member session;
+    # the admin row never carries one (admin auth is the static workspace key).
+    token_hash: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 task_tags = Table(
@@ -90,4 +93,5 @@ class Task(Base):
     assignees: Mapped[list["User"]] = relationship(
         secondary=task_assignees, lazy="selectin"
     )
+
 

@@ -10,7 +10,6 @@ from app.schemas import MemberCreate, MemberRead
 router = APIRouter(
     prefix="/api/members",
     tags=["members"],
-    dependencies=[Depends(get_current_user)],
 )
 
 _INT4_MAX = 2_147_483_647
@@ -18,6 +17,8 @@ _INT4_MAX = 2_147_483_647
 
 @router.get("", response_model=list[MemberRead])
 def list_members(db: Session = Depends(get_db)):
+    # Public on purpose: the app's identity picker lists usernames before any
+    # login exists. Writes below still require the caller and admin role.
     return db.scalars(select(User).order_by(User.username)).all()
 
 

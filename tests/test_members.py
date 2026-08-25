@@ -17,9 +17,12 @@ def test_fresh_db_seeds_demo_trio(client, auth):
     assert {"boudy04", "alice", "bob", "carol"} <= set(names)
 
 
-def test_list_requires_token_401(client):
+def test_list_public_for_identity_picker(client):
+    # The app's login picker lists usernames before any login exists; writes
+    # below still demand the caller and admin role.
     resp = client.get("/api/members")
-    assert resp.status_code == 401
+    assert resp.status_code == 200
+    assert client.post("/api/members", json={"username": "sneak"}).status_code == 401
 
 
 def test_create_member_201_and_normalizes_case(client, auth):

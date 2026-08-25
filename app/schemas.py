@@ -77,6 +77,17 @@ class TaskUpdate(BaseModel):
     _strip_title = field_validator("title", mode="before")(_strip_title)
 
 
+
+
+class NoteCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=500)
+
+
+class NoteRead(BaseModel):
+    author: str
+    body: str
+    created_at: str
+
 class TaskRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -88,6 +99,7 @@ class TaskRead(BaseModel):
     due_at: datetime | None = None
     tags: list[str] = []
     assignees: list[MemberRead] = []
+    notes: list[NoteRead] = []
     created_at: datetime
     updated_at: datetime
 
@@ -97,6 +109,11 @@ class TaskRead(BaseModel):
         # Accept ORM Tag objects (from_attributes) or plain strings; always
         # return names alphabetized.
         return sorted(getattr(t, "name", t) for t in (v or []))
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def _none_notes_to_empty(cls, v):
+        return v or []
 
     @field_validator("assignees", mode="before")
     @classmethod
@@ -113,3 +130,5 @@ class TaskRead(BaseModel):
         if v.tzinfo is None:
             v = v.replace(tzinfo=timezone.utc)
         return v.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+

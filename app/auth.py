@@ -134,9 +134,17 @@ def members_login(payload: MemberLoginRequest, db: Session = Depends(get_db)):
     username = payload.username.strip().lower()
     user = db.scalar(select(User).where(func.lower(User.username) == username))
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Unknown member"
-        )
+        # Two-input login (R32): picking a fresh name auto-provisions the member.
+        import re
+
+        if not re.fullmatch(r"[a-z0-9_.-]{3,24}", username):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Use 3-24 characters: a-z, 0-9, dot, dash, underscore",
+            )
+        user = User(username=username, password_hash="")
+        db.add(user)
+        db.flush()
     if user.username == BOOTSTRAP_USERNAME:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -169,3 +177,4 @@ def admin_verify(payload: AdminVerifyRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not initialised"
         )
     return MeResponse(id=user.id, username=user.username, role="admin")
+

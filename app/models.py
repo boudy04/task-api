@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Table, func
+from sqlalchemy import Column, DateTime, ForeignKey, Index, JSON, String, Table, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -86,6 +86,8 @@ class Task(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    # Member side-notes (R32): [{author, body, created_at}]. Admin + assignees append.
+    notes: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
 
     tags: Mapped[list[Tag]] = relationship(
         secondary=task_tags, back_populates="tasks", lazy="selectin"
@@ -93,5 +95,6 @@ class Task(Base):
     assignees: Mapped[list["User"]] = relationship(
         secondary=task_assignees, lazy="selectin"
     )
+
 
 

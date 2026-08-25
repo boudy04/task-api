@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -5,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.auth import Principal, User, get_current_user, require_admin
 from app.db import get_db
 from app.models import Tag, Task, User
-from app.schemas import TaskCreate, TaskRead, TaskStatus, TaskUpdate
+from app.schemas import NoteCreate, NoteRead, TaskCreate, TaskRead, TaskStatus, TaskUpdate
 
 router = APIRouter(
     prefix="/api/tasks",
@@ -18,7 +20,9 @@ _INT4_MAX = 2_147_483_647
 
 
 def _get_or_404(db: Session, user: User, task_id: int) -> Task:
-    task = db.scalar(select(Task).where(Task.id == task_id, Task.user_id == user.id))
+    # Members view any workspace task; ownership scope applies to the admin list only.
+    scope = [] if getattr(user, "role", "admin") == "member" else [Task.user_id == user.id]
+    task = db.scalar(select(Task).where(Task.id == task_id, *scope))
     if task is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
@@ -85,7 +89,10 @@ def list_tasks(
     user: Principal = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    stmt = select(Task).where(Task.user_id == user.id)
+    # Members view every workspace task (they receive and browse); only the
+    # admin's list is ownership-scoped. Writes stay admin-only via require_admin.
+    scope = [] if user.role == "member" else [Task.user_id == user.id]
+    stmt = select(Task).where(*scope)
     stmt = stmt.order_by(Task.created_at.desc(), Task.id.desc())
     if task_status is not None:
         stmt = stmt.where(Task.status == task_status.value)
@@ -132,6 +139,18 @@ def update_task(
     user: Principal = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if user.role == "member":
+        task = _get_or_404(db, user, task_id)
+        if user.user not in task.assignees:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Members have view-only access")
+        extra = set(payload.model_dump(exclude_unset=True)) - {"status"}
+        if extra:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Assignees may only update status")
+        status_only = payload.model_copy(update={"status": payload.status})
+        _apply_update(task, status_only.model_dump(exclude_unset=True, include={"status"}))
+        db.commit()
+        db.refresh(task)
+        return task
     require_admin(user)
     task = _get_or_404(db, user, task_id)
     data = payload.model_dump(exclude_unset=True)
@@ -162,4 +181,31 @@ def delete_task(
     db.commit()
     _cleanup_orphan_tags(db, user)
     db.commit()
+
+
+
+
+
+
+@router.post("/{task_id}/notes", response_model=NoteRead, status_code=status.HTTP_201_CREATED)
+def add_task_note(
+    payload: NoteCreate,
+    task_id: int = Path(ge=1, le=_INT4_MAX),
+    user: Principal = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = _get_or_404(db, user, task_id)
+    if user.role != "admin" and user.user not in task.assignees:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only assignees can add notes",
+        )
+    note = {
+        "author": user.username,
+        "body": payload.body.strip(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    task.notes = (task.notes or []) + [note]
+    db.commit()
+    return note
 

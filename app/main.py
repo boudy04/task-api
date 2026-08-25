@@ -23,6 +23,7 @@ def init_db() -> None:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS token_hash VARCHAR"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS notes JSON DEFAULT '[]'"))
         # create_all only builds indexes for brand-new tables; enforce the
         # per-user case-insensitive uniqueness on existing ones too.
         conn.execute(text(
@@ -73,3 +74,4 @@ def health() -> dict:
 
 
 app.include_router(identity_router)
+
